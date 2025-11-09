@@ -1,0 +1,22 @@
+# Telegram Bot Configuration
+telegram:
+  bot:
+    token: ""    # Токен от @BotFather
+    name: ""     # Имя бота (без @)
+
+# Google Vision API Configuration
+google:
+  cloud:
+    vision:
+      api-key: ""  # Ключ из Google Cloud
+
+# Spring Boot Configuration
+spring:
+  main:
+    web-application-type: none               # Не запускать веб-сервер
+
+# Logging Configuration
+logging:
+  level:
+    com.car.damageanalyzerbot: DEBUG        # Логи нашего пакета
+    org.telegram: INFO                      # Логи Telegram библиотеки
