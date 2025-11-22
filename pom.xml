@@ -37,11 +37,26 @@
             <version>6.9.7.1</version>
         </dependency>
 
-        <!-- Google Vision API -->
+        <!-- Yandex Vision API -->
+        <!-- Основной SDK -->
         <dependency>
-            <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-vision</artifactId>
-            <version>3.76.0</version>
+            <groupId>com.yandex.cloud</groupId>
+            <artifactId>java-sdk-services</artifactId>
+            <version>2.10.0</version>
+        </dependency>
+
+        <!-- Специфичный модуль для Vision -->
+        <dependency>
+            <groupId>com.yandex.cloud</groupId>
+            <artifactId>vision</artifactId>
+            <version>2.10.0</version>
+        </dependency>
+
+        <!-- Модуль для аутентификации -->
+        <dependency>
+            <groupId>com.yandex.cloud</groupId>
+            <artifactId>auth</artifactId>
+            <version>2.10.0</version>
         </dependency>
 
         <!-- Utils -->

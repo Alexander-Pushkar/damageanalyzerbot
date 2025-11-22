@@ -1,71 +1,95 @@
 package com.car.damageanalyzerbot.service;
 
-import com.google.cloud.vision.v1.*;
-import com.google.protobuf.ByteString;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Base64;
+import org.json.JSONObject;
 
 @Slf4j
 @Service
 public class SimpleVisionService {
 
+    @Value("${yandex.cloud.iam.token}")
+    private String iamToken;
+
+    @Value("${yandex.cloud.folder.id}")
+    private String folderId;
+
+    private static final String OCR_URL = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText";
+
     public String analyzeImage(byte[] imageData) {
-        try (ImageAnnotatorClient vision = ImageAnnotatorClient.create()) {
+        try {
+            log.info("Starting Yandex Vision OCR analysis for image size: {} bytes", imageData.length);
 
-            // Подготавливаем изображение
-            ByteString imgBytes = ByteString.copyFrom(imageData);
-            Image image = Image.newBuilder().setContent(imgBytes).build();
+            // Кодируем изображение в Base64
+            String base64Image = Base64.getEncoder().encodeToString(imageData);
 
-            // Запрос на определение объектов
-            Feature feature = Feature.newBuilder()
-                    .setType(Feature.Type.LABEL_DETECTION)
-                    .setMaxResults(10)
+            // Формируем JSON запрос
+            JSONObject requestBody = new JSONObject();
+            requestBody.put("mimeType", "JPEG");
+            requestBody.put("languageCodes", new String[]{"*"});
+            requestBody.put("model", "page");
+            requestBody.put("content", base64Image);
+
+            // Создаем HTTP запрос
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(OCR_URL))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + iamToken)
+                    .header("x-folder-id", folderId)
+                    .header("x-data-logging-enabled", "true")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
                     .build();
 
-            AnnotateImageRequest request = AnnotateImageRequest.newBuilder()
-                    .addFeatures(feature)
-                    .setImage(image)
-                    .build();
+            // Отправляем запрос
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-            List<AnnotateImageRequest> requests = new ArrayList<>();
-            requests.add(request);
+            log.info("Yandex Vision response status: {}", response.statusCode());
 
-            // Отправляем запрос к Google Vision API
-            BatchAnnotateImagesResponse response = vision.batchAnnotateImages(requests);
-            List<AnnotateImageResponse> responses = response.getResponsesList();
-
-            // Обрабатываем ответ
-            if (responses.isEmpty()) {
-                return "Не удалось проанализировать изображение (Vision API)";
+            if (response.statusCode() == 200) {
+                String result = extractTextFromResponse(response.body());
+                log.info("Successfully recognized text: {} characters", result.length());
+                return formatResult(result);
+            } else {
+                log.error("Yandex Vision API error: {}", response.body());
+                return "❌ Ошибка при анализе изображения. Код: " + response.statusCode();
             }
-
-            AnnotateImageResponse visionResponse = responses.get(0);
-
-            if (visionResponse.hasError()) {
-                return "Ошибка Vision API: " + visionResponse.getError().getMessage();
-            }
-
-            // Формируем описание из найденных объектов
-            List<String> labels = visionResponse.getLabelAnnotationsList().stream()
-                    .filter(label -> label.getScore() > 0.7) // Только уверенные >70%
-                    .map(label -> String.format("%s (%.0f%%)",
-                            label.getDescription(),
-                            label.getScore() * 100))
-                    .collect(Collectors.toList());
-
-            if (labels.isEmpty()) {
-                return "Не удалось определить объекты на фото";
-            }
-
-            return "На фото обнаружено:" + String.join("\n", labels);
 
         } catch (Exception e) {
-            log.error("Vision API error", e);
-            return "Ошибка при анализе фото: " + e.getMessage();
+            log.error("Error in Yandex Vision analysis", e);
+            return "❌ Ошибка: " + e.getMessage();
         }
+    }
+
+    private String extractTextFromResponse(String jsonResponse) {
+        try {
+            JSONObject response = new JSONObject(jsonResponse);
+            JSONObject result = response.getJSONObject("result");
+            JSONObject textAnnotation = result.getJSONObject("textAnnotation");
+
+            return textAnnotation.getString("fullText");
+
+        } catch (Exception e) {
+            log.error("Error parsing Yandex Vision response", e);
+            return "Не удалось распознать текст";
+        }
+    }
+
+    private String formatResult(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return "🔍 Текст на изображении не обнаружен";
+        }
+
+        // Форматируем результат для Telegram
+        return "✅ **Распознанный текст:**\n\n" +
+                "```\n" +
+                text.trim() +
+                "\n```";
     }
 }

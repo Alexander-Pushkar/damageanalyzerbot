@@ -4,11 +4,13 @@ telegram:
     token: ""    # Токен от @BotFather
     name: ""     # Имя бота (без @)
 
-# Google Vision API Configuration
-google:
+# Yandex Vision API Configuration
+yandex:
   cloud:
-    vision:
-      api-key: ""  # Ключ из Google Cloud
+    iam:
+      key: ""
+    folder:
+      id: ""
 
 # Spring Boot Configuration
 spring:
