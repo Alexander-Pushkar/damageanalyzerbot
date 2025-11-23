@@ -13,14 +13,15 @@ import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 public class BotConfig {
 
     @Bean
-    public TelegramBotsApi telegramBotsApi(SimpleCarBot bot) throws TelegramApiException {
-        TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
+    public TelegramBotsApi telegramBotsApi(SimpleCarBot bot) {
         try {
+            TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
             botsApi.registerBot(bot);
-            log.info("Telegram бот успешно зарегистрирован: {}", bot.getBotUsername());
+            log.info("✅ Telegram bot registered successfully");
+            return botsApi;
         } catch (TelegramApiException e) {
-            log.error("Ошибка регистрации бота", e);
+            log.error("❌ Failed to register Telegram bot", e);
+            throw new RuntimeException("Telegram bot registration failed", e);
         }
-        return botsApi;
     }
 }

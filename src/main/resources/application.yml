@@ -8,7 +8,7 @@ telegram:
 yandex:
   cloud:
     iam:
-      key: ""
+      token: ""
     folder:
       id: ""
 

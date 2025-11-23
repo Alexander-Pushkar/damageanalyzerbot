@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Document;
 import org.telegram.telegrambots.meta.api.objects.File;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.PhotoSize;
@@ -15,20 +16,18 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.io.InputStream;
 import java.net.URL;
-import java.util.Comparator;
-import java.util.List;
 
 @Slf4j
 @Component
 public class SimpleCarBot extends TelegramLongPollingBot {
+
+    private final SimpleVisionService visionService;
 
     @Value("${telegram.bot.token}")
     private String botToken;
 
     @Value("${telegram.bot.name}")
     private String botName;
-
-    private final SimpleVisionService visionService;
 
     public SimpleCarBot(SimpleVisionService visionService) {
         this.visionService = visionService;
@@ -46,72 +45,89 @@ public class SimpleCarBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        if (update.hasMessage()) {
-            Message message = update.getMessage();
+        try {
+            if (update.hasMessage()) {
+                Message message = update.getMessage();
+                if (message.hasText()) {
+                    Long chatId = message.getChatId();
+                    sendSimpleMessage(chatId, "📸 Отправь фото для анализа");
+                }
 
-            if (message.hasText()) {
-                handleTextMessage(message);
-            } else if (message.hasPhoto()) {
-                handlePhotoMessage(message);
+                int isImage = isPhotoMessage(message); // 0-false 1-photo 2 doc
+                if (isImage != 0) {
+                    handlePhotoMessage(message, isImage);
+                }
             }
+        } catch (Exception e) {
+            System.out.println("Error in onUpdateReceived: " + e.getMessage());
         }
     }
 
-    private void handleTextMessage(Message message) {
-        Long chatId = message.getChatId();
-        sendMessage(chatId, "Отправь фото для анализа!");
+    private int isPhotoMessage(Message message) {
+        // 1. Проверяем обычные фото
+        if (message.getPhoto() != null && !message.getPhoto().isEmpty()) {
+            return 1;
+        }
+
+        // 2. Проверяем документы-изображения
+        if (message.hasDocument()) {
+            Document doc = message.getDocument();
+            String mimeType = doc.getMimeType();
+            if (mimeType != null && mimeType.startsWith("image/")) {
+                return 2;
+            }
+            return 0;
+        }
+
+        return 0;
     }
 
-    private void handlePhotoMessage(Message message) {
+    private void handlePhotoMessage(Message message, int photoOrDoc) {
         Long chatId = message.getChatId();
-
         try {
-            sendMessage(chatId, "Анализирую фото через Google Vision API...");
+            sendSimpleMessage(chatId, "🔍 Анализирую фото...");
 
-            // Получаем самое качественное фото
-            PhotoSize photo = message.getPhoto().stream()
-                    .max(Comparator.comparing(PhotoSize::getFileSize))
-                    .orElseThrow(() -> new RuntimeException("No photo found"));
+            byte[] imageData = downloadImageData(message, photoOrDoc);
+            String textResult = visionService.analyzeImage(imageData);
 
-            // Скачиваем фото
-            byte[] imageData = downloadPhoto(photo);
+            sendSimpleMessage(chatId, textResult);
+        } catch (Exception e) {
+            sendSimpleMessage(chatId, "❌ Ошибка обработки фото: " + e.getMessage());
+        }
+    }
 
-            // Анализируем через Google Vision API
-            String analysisResult = visionService.analyzeImage(imageData);
+    private byte[] downloadImageData(Message message, int photoOrDoc) {
+        try {
+            // Пробуем скачать как фото
+            if (photoOrDoc == 1) {
+                PhotoSize photo = message.getPhoto().get(message.getPhoto().size() - 1);
+                return downloadImageFile(photo.getFileId());
+            }
 
-            // Отправляем результат
-            sendMessage(chatId, analysisResult);
+            // Пробуем скачать как документ
+            return downloadImageFile(message.getDocument().getFileId());
 
         } catch (Exception e) {
-            log.error("Error processing photo", e);
-            sendMessage(chatId, "Ошибка: " + e.getMessage());
+            throw new RuntimeException("Failed to download image: " + e.getMessage());
         }
     }
 
-    private byte[] downloadPhoto(PhotoSize photo) {
-        try {
-            GetFile getFile = new GetFile(photo.getFileId());
+    private byte[] downloadImageFile(String fileId) throws Exception {
+            GetFile getFile = new GetFile(fileId);
             File file = execute(getFile);
-            String fileUrl = "https://api.telegram.org/file/bot" + botToken + "/" + file.getFilePath();
-
-            try (InputStream in = new URL(fileUrl).openStream()) {
+            try (InputStream in = new URL(file.getFileUrl(getBotToken())).openStream()) {
                 return in.readAllBytes();
             }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download photo", e);
-        }
     }
 
-    private void sendMessage(Long chatId, String text) {
+    private void sendSimpleMessage(Long chatId, String text) {
         SendMessage message = new SendMessage();
         message.setChatId(chatId.toString());
         message.setText(text);
-        message.setParseMode("Markdown");
-
         try {
             execute(message);
         } catch (TelegramApiException e) {
-            log.error("Failed to send message", e);
+            System.out.println("Failed to send message: " + e.getMessage());
         }
     }
 }
